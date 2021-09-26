@@ -1,8 +1,8 @@
-package dary_test
+package daryheap_test
 
 import (
 	"encoding/binary"
-	"github.com/denismitr/gds/dary"
+	"github.com/denismitr/gds/daryheap"
 	"github.com/stretchr/testify/assert"
 	"hash/fnv"
 	"testing"
@@ -24,7 +24,7 @@ func (el *simpleTestElement) Hash() uint64 {
 
 func Test_DHeap_New(t *testing.T) {
 	t.Run("it can be initialized empty", func(t *testing.T) {
-		dh, err := dary.New(2)
+		dh, err := daryheap.New(2)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -35,7 +35,7 @@ func Test_DHeap_New(t *testing.T) {
 	})
 
 	t.Run("it can be initialized with one element", func(t *testing.T) {
-		dh, err := dary.New(2)
+		dh, err := daryheap.New(2)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -73,7 +73,7 @@ func Test_DHeap_New(t *testing.T) {
 
 func TestDHeap_Insert(t *testing.T) {
 	t.Run("2-ary max heap", func(t *testing.T) {
-		dh, err := dary.New(2)
+		dh, err := daryheap.New(2)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -89,42 +89,68 @@ func TestDHeap_Insert(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Top() returned unexpected error %v", err)
 		}
-
 		assert.Equal(t, "foo3", foo3.(*simpleTestElement).v)
 
 		foo6, err := dh.Top()
 		if err != nil {
 			t.Fatalf("Top() returned unexpected error %v", err)
 		}
-
 		assert.Equal(t, "foo6", foo6.(*simpleTestElement).v)
 
 		foo4, err := dh.Top()
 		if err != nil {
 			t.Fatalf("Top() returned unexpected error %v", err)
 		}
-
 		assert.Equal(t, "foo4", foo4.(*simpleTestElement).v)
 
 		foo1, err := dh.Top()
 		if err != nil {
 			t.Fatalf("Top() returned unexpected error %v", err)
 		}
-
 		assert.Equal(t, "foo1", foo1.(*simpleTestElement).v)
 
 		foo2, err := dh.Top()
 		if err != nil {
 			t.Fatalf("Top() returned unexpected error %v", err)
 		}
-
 		assert.Equal(t, "foo2", foo2.(*simpleTestElement).v)
 
 		foo5, err := dh.Top()
 		if err != nil {
 			t.Fatalf("Top() returned unexpected error %v", err)
 		}
-
 		assert.Equal(t, "foo5", foo5.(*simpleTestElement).v)
+	})
+}
+
+func TestDaryHeap_UpdatePriority(t *testing.T) {
+	t.Run("make first element - last", func(t *testing.T) {
+		dh, err := daryheap.New(2)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		dh.Insert(&simpleTestElement{"foo1"}, 20)
+		dh.Insert(&simpleTestElement{"foo2"}, 2)
+		dh.Insert(&simpleTestElement{"foo3"}, 987)
+		dh.Insert(&simpleTestElement{"foo4"}, 454)
+		dh.Insert(&simpleTestElement{"foo5"}, -2)
+		dh.Insert(&simpleTestElement{"foo6"}, 490)
+
+		foo3, err := dh.Peek()
+		if err != nil {
+			t.Fatalf("Peek() returned unexpected error %v", err)
+		}
+		assert.Equal(t, "foo3", foo3.(*simpleTestElement).v)
+
+		if err := dh.UpdatePriority(&simpleTestElement{"foo3"}, -10); err != nil {
+			t.Fatalf("could not update priority for foo3: %v", err)
+		}
+
+		foo6, err := dh.Top()
+		if err != nil {
+			t.Fatalf("Top() returned unexpected error %v", err)
+		}
+		assert.Equal(t, "foo6", foo6.(*simpleTestElement).v)
 	})
 }

@@ -1,21 +1,16 @@
-package dary
+package daryheap
 
 import (
 	"errors"
 	"fmt"
+	"github.com/denismitr/gds/contracts"
 	"math"
 )
 
 var ErrEmptyHeap = errors.New("empty heap")
 var ErrInvalidBranchingFactor = errors.New("branching factor must be greater than 1")
+var ErrElementNotFound = errors.New("element not found in identity map")
 var errCurrentNodeHasNoKid = errors.New("current node has no kid")
-
-type Heap interface {
-}
-
-type Identity interface {
-	Hash() uint64
-}
 
 type element struct {
 	value    interface{}
@@ -23,18 +18,18 @@ type element struct {
 	priority float64
 }
 
-type DHeap struct {
+type DaryHeap struct {
 	elements        []element
 	identityMap     map[uint64]int
 	branchingFactor int
 }
 
-func New(branchingFactor int) (*DHeap, error) {
+func New(branchingFactor int) (*DaryHeap, error) {
 	if branchingFactor < 2 {
 		return nil, ErrInvalidBranchingFactor
 	}
 
-	h := DHeap{
+	h := DaryHeap{
 		elements:        nil,
 		identityMap:     make(map[uint64]int),
 		branchingFactor: branchingFactor,
@@ -43,7 +38,7 @@ func New(branchingFactor int) (*DHeap, error) {
 	return &h, nil
 }
 
-func (h *DHeap) getParentIndex(childIndex int) int {
+func (h *DaryHeap) getParentIndex(childIndex int) int {
 	if childIndex == 0 {
 		return 0
 	}
@@ -53,7 +48,7 @@ func (h *DHeap) getParentIndex(childIndex int) int {
 	return (childIndex - 1) / h.branchingFactor
 }
 
-func (h *DHeap) bubbleUp(index int) {
+func (h *DaryHeap) bubbleUp(index int) {
 	if len(h.elements) < index+1 {
 		panic("nodes length and index position mismatch")
 	}
@@ -75,11 +70,11 @@ func (h *DHeap) bubbleUp(index int) {
 	h.identityMap[elem.identity] = index
 }
 
-func (h *DHeap) firstLeafIndex() int {
+func (h *DaryHeap) firstLeafIndex() int {
 	return (len(h.elements) - 2) / (h.branchingFactor + 1)
 }
 
-func (h *DHeap) firstKidIndexOf(index int) int {
+func (h *DaryHeap) firstKidIndexOf(index int) int {
 	return index*h.branchingFactor + 1
 }
 
@@ -87,7 +82,7 @@ func (h *DHeap) firstKidIndexOf(index int) int {
 // In case multiple kids have the same priority, the left-most kid is returned.
 // Returns the index of the kid of the current heap node with highest priority,
 // or error if current node has no kid.
-func (h *DHeap) highestPriorityKidIndex(index int) (int, error) {
+func (h *DaryHeap) highestPriorityKidIndex(index int) (int, error) {
 	fki := h.firstKidIndexOf(index)
 	hSize := len(h.elements)
 	if fki > hSize {
@@ -107,11 +102,11 @@ func (h *DHeap) highestPriorityKidIndex(index int) (int, error) {
 	return result, nil
 }
 
-func (h *DHeap) firstKidIndex(index int) int {
+func (h *DaryHeap) firstKidIndex(index int) int {
 	return h.branchingFactor * index + 1;
 }
 
-func (h *DHeap) pushDown(index int) {
+func (h *DaryHeap) pushDown(index int) {
 	if index < 0 || index >= len(h.elements) {
 		panic(fmt.Sprintf("index %d is out of allowed range", index))
 	}
@@ -149,31 +144,39 @@ func (h *DHeap) pushDown(index int) {
 	h.identityMap[elem.identity] = currIndex
 }
 
-func (h *DHeap) heapify() {
+func (h *DaryHeap) heapify() {
 	lastInnerElementIndex := h.firstLeafIndex() - 1
 	for index := lastInnerElementIndex; index > 0; index-- {
 		h.pushDown(index)
 	}
 }
 
-func (h *DHeap) Insert(v Identity, priority float64) {
+func (h *DaryHeap) Insert(v contracts.Identity, priority float64) {
 	elem := element{value: v, identity: v.Hash(), priority: priority}
 	h.elements = append(h.elements, elem)
 	h.bubbleUp(len(h.elements) - 1)
 }
 
-func (h *DHeap) popValue() interface{} {
+func (h *DaryHeap) popValue() interface{} {
 	elem := h.elements[0]
 	h.elements = append(h.elements[:0], h.elements[1:]...)
 	delete(h.identityMap, elem.identity)
 	return elem.value
 }
 
-func (h *DHeap) Empty() bool {
+func (h *DaryHeap) findIndexOf(elem contracts.Identity) (int, error) {
+	index, ok := h.identityMap[elem.Hash()]
+	if !ok {
+		return 0, ErrElementNotFound
+	}
+	return index, nil
+}
+
+func (h *DaryHeap) Empty() bool {
 	return len(h.elements) == 0
 }
 
-func (h *DHeap) Top() (interface{}, error) {
+func (h *DaryHeap) Top() (interface{}, error) {
 	if h.Empty() {
 		return nil, ErrEmptyHeap
 	}
@@ -187,12 +190,29 @@ func (h *DHeap) Top() (interface{}, error) {
 	return elem, nil
 }
 
-func (h *DHeap) Peek() (interface{}, error) {
+func (h *DaryHeap) Peek() (interface{}, error) {
 	if h.Empty() {
 		return nil, ErrEmptyHeap
 	}
 
 	return h.elements[0].value, nil
+}
+
+func (h *DaryHeap) UpdatePriority(elem contracts.Identity, newPriority float64) error {
+	index, err := h.findIndexOf(elem)
+	if err != nil {
+		return err
+	}
+
+	oldPriority := h.elements[index].priority
+	h.elements[index].priority = newPriority
+	if newPriority > oldPriority {
+		h.bubbleUp(index)
+	} else if newPriority < oldPriority {
+		h.pushDown(index)
+	}
+
+	return nil
 }
 
 func minInt(a, b int) int {
