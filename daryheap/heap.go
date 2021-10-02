@@ -1,9 +1,10 @@
 package daryheap
 
 import (
-	"errors"
 	"fmt"
 	"github.com/denismitr/gds/contracts"
+	"github.com/denismitr/gds/internal/utils"
+	"github.com/pkg/errors"
 	"math"
 )
 
@@ -12,21 +13,61 @@ var ErrInvalidBranchingFactor = errors.New("branching factor must be greater tha
 var ErrElementNotFound = errors.New("element not found in identity map")
 var errCurrentNodeHasNoKid = errors.New("current node has no kid")
 
+const (
+	MinBranchingFactor = 2
+	MaxBranchingFactor = 10
+)
+
+
+type options struct {
+	isMinHeap bool
+	useMutex  bool
+}
+
+type OptionFunc func(*options)
+
 type element struct {
 	value    interface{}
 	identity uint64
 	priority float64
 }
 
-type DaryHeap struct {
-	elements        []element
-	identityMap     map[uint64]int
-	branchingFactor int
+type priorityComparator func(p1, p2 float64) bool
+
+func minHeapGreaterPriority(p1, p2 float64) bool {
+	return p1 < p2
 }
 
-func New(branchingFactor int) (*DaryHeap, error) {
-	if branchingFactor < 2 {
-		return nil, ErrInvalidBranchingFactor
+func maxHeapGreaterPriority(p1, p2 float64) bool {
+	return p1 > p2
+}
+
+type DaryHeap struct {
+	elements           []element
+	identityMap        map[uint64]int
+	branchingFactor    int
+	locker             utils.Locker
+	hasGreaterPriority priorityComparator
+}
+
+
+func New(branchingFactor int, ofs ...OptionFunc) (*DaryHeap, error) {
+	opts := options{
+		isMinHeap: false,
+		useMutex:  true,
+	}
+
+	for _, opt := range ofs {
+		opt(&opts)
+	}
+
+	if branchingFactor < MinBranchingFactor || branchingFactor > MaxBranchingFactor {
+		return nil, errors.Wrapf(
+			ErrInvalidBranchingFactor,
+			"must be between %d and %d",
+			MinBranchingFactor,
+			MaxBranchingFactor,
+		)
 	}
 
 	h := DaryHeap{
@@ -35,7 +76,119 @@ func New(branchingFactor int) (*DaryHeap, error) {
 		branchingFactor: branchingFactor,
 	}
 
+	if opts.useMutex {
+		h.locker = &utils.MutexLock{}
+	} else {
+		h.locker = &utils.NullLocker{}
+	}
+
+	if opts.isMinHeap {
+		h.hasGreaterPriority = minHeapGreaterPriority
+	} else {
+		h.hasGreaterPriority = maxHeapGreaterPriority
+	}
+
 	return &h, nil
+}
+
+func (h *DaryHeap) Insert(v contracts.Identity, priority float64) {
+	h.locker.WriteLock()
+	defer h.locker.WriteUnlock()
+
+	elem := element{value: v, identity: v.Hash(), priority: priority}
+	h.elements = append(h.elements, elem)
+	h.bubbleUp(len(h.elements) - 1)
+}
+
+func (h *DaryHeap) Empty() bool {
+	h.locker.ReadLock()
+	defer h.locker.ReadUnlock()
+
+	return len(h.elements) == 0
+}
+
+func (h *DaryHeap) Size() int {
+	h.locker.ReadLock()
+	defer h.locker.ReadUnlock()
+
+	return len(h.elements)
+}
+
+func (h *DaryHeap) Top() (interface{}, error) {
+	h.locker.WriteLock()
+	defer h.locker.WriteUnlock()
+
+	if len(h.elements) == 0 {
+		return nil, ErrEmptyHeap
+	}
+
+	if len(h.elements) == 1 {
+		return h.popValue(), nil
+	}
+
+	elem := h.popValue()
+	h.pushDown(0)
+	return elem, nil
+}
+
+func (h *DaryHeap) Contains(elem contracts.Identity) bool {
+	h.locker.ReadLock()
+	defer h.locker.ReadUnlock()
+	return h.contains(elem)
+}
+
+func (h *DaryHeap) Peek() (interface{}, error) {
+	h.locker.ReadLock()
+	defer h.locker.ReadUnlock()
+
+	if len(h.elements) == 0 {
+		return nil, ErrEmptyHeap
+	}
+
+	return h.elements[0].value, nil
+}
+
+func (h *DaryHeap) UpdatePriority(elem contracts.Identity, newPriority float64) error {
+	h.locker.WriteLock()
+	defer h.locker.WriteUnlock()
+
+	index, err := h.findIndexOf(elem)
+	if err != nil {
+		return err
+	}
+
+	oldPriority := h.elements[index].priority
+	h.elements[index].priority = newPriority
+	if h.hasGreaterPriority(newPriority, oldPriority) {
+		h.bubbleUp(index)
+	} else if newPriority < oldPriority {
+		h.pushDown(index)
+	}
+
+	return nil
+}
+
+func (h *DaryHeap) Remove(elem contracts.Identity) error {
+	h.locker.WriteLock()
+	defer h.locker.WriteUnlock()
+
+	index, err := h.findIndexOf(elem)
+	if err != nil {
+		return err
+	}
+
+	n := len(h.elements)
+	h.remove(index)
+	if n > 1 {
+		h.pushDown(index)
+	}
+
+	return nil
+}
+
+func (h *DaryHeap) contains(elem contracts.Identity) bool {
+	_, ok := h.identityMap[elem.Hash()]
+	return ok
 }
 
 func (h *DaryHeap) getParentIndex(childIndex int) int {
@@ -57,7 +210,7 @@ func (h *DaryHeap) bubbleUp(index int) {
 	for index > 0 {
 		parentIndex := h.getParentIndex(index)
 		parent := h.elements[parentIndex]
-		if elem.priority > parent.priority {
+		if h.hasGreaterPriority(elem.priority, parent.priority) {
 			h.elements[index] = parent
 			h.identityMap[parent.identity] = index
 			index = parentIndex
@@ -93,7 +246,7 @@ func (h *DaryHeap) highestPriorityKidIndex(index int) (int, error) {
 	highestPriority := -math.MaxFloat64
 	result := fki
 	for i := range h.elements[fki:lastIndex] {
-		if h.elements[i].priority > highestPriority {
+		if h.hasGreaterPriority(h.elements[i].priority, highestPriority) {
 			highestPriority = h.elements[i].priority
 			result = i
 		}
@@ -103,7 +256,7 @@ func (h *DaryHeap) highestPriorityKidIndex(index int) (int, error) {
 }
 
 func (h *DaryHeap) firstKidIndex(index int) int {
-	return h.branchingFactor * index + 1;
+	return h.branchingFactor*index + 1
 }
 
 func (h *DaryHeap) pushDown(index int) {
@@ -115,10 +268,10 @@ func (h *DaryHeap) pushDown(index int) {
 	elem := h.elements[index]
 	smallestKidIndex := h.firstKidIndexOf(index)
 	for smallestKidIndex < len(h.elements) {
-		lastKidIndexGuard := minInt(h.firstKidIndexOf(index) + h.branchingFactor, len(h.elements))
+		lastKidIndexGuard := minInt(h.firstKidIndexOf(index)+h.branchingFactor, len(h.elements))
 
 		for kidIndex := smallestKidIndex; kidIndex < lastKidIndexGuard; kidIndex++ {
-			if h.elements[kidIndex].priority > h.elements[smallestKidIndex].priority {
+			if h.hasGreaterPriority(h.elements[kidIndex].priority, h.elements[smallestKidIndex].priority) {
 				smallestKidIndex = kidIndex
 			}
 		}
@@ -130,7 +283,7 @@ func (h *DaryHeap) pushDown(index int) {
 
 		kid := h.elements[smallestKidIndex]
 
-		if kid.priority > elem.priority {
+		if h.hasGreaterPriority(kid.priority, elem.priority) {
 			h.elements[currIndex] = kid
 			h.identityMap[kid.identity] = currIndex
 			currIndex = smallestKidIndex
@@ -151,68 +304,28 @@ func (h *DaryHeap) heapify() {
 	}
 }
 
-func (h *DaryHeap) Insert(v contracts.Identity, priority float64) {
-	elem := element{value: v, identity: v.Hash(), priority: priority}
-	h.elements = append(h.elements, elem)
-	h.bubbleUp(len(h.elements) - 1)
-}
-
 func (h *DaryHeap) popValue() interface{} {
 	elem := h.elements[0]
-	h.elements = append(h.elements[:0], h.elements[1:]...)
-	delete(h.identityMap, elem.identity)
+	h.remove(0)
 	return elem.value
 }
 
+func (h *DaryHeap) remove(index int) {
+	delete(h.identityMap, h.elements[index].identity)
+	h.elements = append(h.elements[:index], h.elements[index+1:]...)
+}
+
 func (h *DaryHeap) findIndexOf(elem contracts.Identity) (int, error) {
+	if len(h.elements) == 0 {
+		return 0, ErrEmptyHeap
+	}
+
 	index, ok := h.identityMap[elem.Hash()]
 	if !ok {
 		return 0, ErrElementNotFound
 	}
+
 	return index, nil
-}
-
-func (h *DaryHeap) Empty() bool {
-	return len(h.elements) == 0
-}
-
-func (h *DaryHeap) Top() (interface{}, error) {
-	if h.Empty() {
-		return nil, ErrEmptyHeap
-	}
-
-	if len(h.elements) == 1 {
-		return h.popValue(), nil
-	}
-
-	elem := h.popValue()
-	h.pushDown(0)
-	return elem, nil
-}
-
-func (h *DaryHeap) Peek() (interface{}, error) {
-	if h.Empty() {
-		return nil, ErrEmptyHeap
-	}
-
-	return h.elements[0].value, nil
-}
-
-func (h *DaryHeap) UpdatePriority(elem contracts.Identity, newPriority float64) error {
-	index, err := h.findIndexOf(elem)
-	if err != nil {
-		return err
-	}
-
-	oldPriority := h.elements[index].priority
-	h.elements[index].priority = newPriority
-	if newPriority > oldPriority {
-		h.bubbleUp(index)
-	} else if newPriority < oldPriority {
-		h.pushDown(index)
-	}
-
-	return nil
 }
 
 func minInt(a, b int) int {

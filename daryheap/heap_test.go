@@ -22,6 +22,18 @@ func (el *simpleTestElement) Hash() uint64 {
 	return h.Sum64()
 }
 
+type testableString string
+
+func (s testableString) Hash() uint64 {
+	h := fnv.New64a()
+
+	if err := binary.Write(h, binary.LittleEndian, []byte(s)); err != nil {
+		panic(err)
+	}
+
+	return h.Sum64()
+}
+
 func Test_DHeap_New(t *testing.T) {
 	t.Run("it can be initialized empty", func(t *testing.T) {
 		dh, err := daryheap.New(2)
@@ -85,6 +97,8 @@ func TestDHeap_Insert(t *testing.T) {
 		dh.Insert(&simpleTestElement{"foo5"}, -2)
 		dh.Insert(&simpleTestElement{"foo6"}, 490)
 
+		assert.True(t, dh.Contains(&simpleTestElement{"foo1"}))
+
 		foo3, err := dh.Top()
 		if err != nil {
 			t.Fatalf("Top() returned unexpected error %v", err)
@@ -120,6 +134,9 @@ func TestDHeap_Insert(t *testing.T) {
 			t.Fatalf("Top() returned unexpected error %v", err)
 		}
 		assert.Equal(t, "foo5", foo5.(*simpleTestElement).v)
+
+		assert.True(t, dh.Empty())
+		assert.Equal(t, 0, dh.Empty())
 	})
 }
 
@@ -152,5 +169,57 @@ func TestDaryHeap_UpdatePriority(t *testing.T) {
 			t.Fatalf("Top() returned unexpected error %v", err)
 		}
 		assert.Equal(t, "foo6", foo6.(*simpleTestElement).v)
+	})
+}
+
+func TestDaryHeap_Remove(t *testing.T) {
+	t.Run("remove some of the elements", func(t *testing.T) {
+		dh, err := daryheap.New(3)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		dh.Insert(testableString("foo"), 45.4)
+		dh.Insert(testableString("bar"), 46.4)
+		dh.Insert(testableString("baz"), 5.3)
+		dh.Insert(testableString("abc123"), -45.4)
+		dh.Insert(testableString("cba123abc"), 145.9)
+		dh.Insert(testableString("foobar"), -148.9)
+		dh.Insert(testableString("barBaz"), 95.932)
+		dh.Insert(testableString("fooBaz"), -91.932)
+
+		assert.Equal(t, 8, dh.Size())
+
+		// test that some items exist
+		assert.True(t, dh.Contains(testableString("barBaz")))
+		assert.True(t, dh.Contains(testableString("cba123abc")))
+		assert.True(t, dh.Contains(testableString("bar")))
+		assert.True(t, dh.Contains(testableString("foobar")))
+
+		if err := dh.Remove(testableString("foobar")); err != nil {
+			t.Fatal(err)
+		}
+
+		assert.False(t, dh.Contains(testableString("foobar")))
+
+		cba123abc, err := dh.Peek()
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		assert.Equal(t, testableString("cba123abc"), cba123abc)
+
+		// do: remove the first element
+		if err := dh.Remove(cba123abc.(testableString)); err != nil {
+			t.Fatal(err)
+		}
+
+		// top element should have changed
+		barBaz, err := dh.Peek()
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		assert.Equal(t, testableString("barBaz"), barBaz)
 	})
 }
