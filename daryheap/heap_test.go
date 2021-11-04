@@ -136,7 +136,6 @@ func TestDHeap_Insert(t *testing.T) {
 		assert.Equal(t, "foo5", foo5.(*simpleTestElement).v)
 
 		assert.True(t, dh.Empty())
-		assert.Equal(t, 0, dh.Empty())
 	})
 }
 
