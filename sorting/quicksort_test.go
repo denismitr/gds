@@ -46,3 +46,12 @@ func TestQuick_Floats(t *testing.T) {
 		})
 	}
 }
+
+func BenchmarkQuick_Floats(b *testing.B) {
+	in := []float64{2.3,3.9,4.8,1.2,9.99867,8,9873.8773, 0.86763, -9, -7.2, 88}
+
+	s := sorting.FloatSlice(in)
+	for i := 0; i < b.N; i++ {
+		sorting.QuickSort(s)
+	}
+}

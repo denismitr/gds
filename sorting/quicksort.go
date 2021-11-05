@@ -45,16 +45,14 @@ func partition(s Sortable, left, right int) int {
 	pivot := rand.Intn(right - left) + left
 	s.Swap(pivot, right)
 
-	i := left - 1
-
-	for j := left; j <= right- 1; j++ {
+	for j := left; j <= right - 1; j++ {
 		// If current element is smaller than the pivot
 		if s.Less(j, right) {
-			i++ // increment index of smaller element
-			s.Swap(i, j)
+			s.Swap(left, j)
+			left++
 		}
 	}
 
-	s.Swap(i + 1, right)
-	return i + 1
+	s.Swap(left, right)
+	return left
 }
