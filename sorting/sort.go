@@ -1,5 +1,14 @@
 package sorting
 
+import (
+	"math/rand"
+	"time"
+)
+
+func init() {
+	rand.Seed(time.Now().UnixNano())
+}
+
 type Sortable interface {
 	Len() int
 	Less(i, j int) bool
@@ -13,8 +22,8 @@ type Sorter interface {
 }
 
 type (
-	IntSlice []int
-	StringSlice []string
+	IntegerSlice []int
+	StringSlice  []string
 	FloatSlice []float64
 )
 
@@ -42,15 +51,15 @@ func (s StringSlice) Swap(i, j int) {
 	s[i], s[j] = s[j], s[i]
 }
 
-func (s IntSlice) Len() int {
+func (s IntegerSlice) Len() int {
 	return len(s)
 }
 
-func (s IntSlice) Less(i, j int) bool {
+func (s IntegerSlice) Less(i, j int) bool {
 	return s[i] < s[j]
 }
 
-func (s IntSlice) Swap(i, j int) {
+func (s IntegerSlice) Swap(i, j int) {
 	s[i], s[j] = s[j], s[i]
 }
 

@@ -2,12 +2,7 @@ package sorting
 
 import (
 	"math/rand"
-	"time"
 )
-
-func init() {
-	rand.Seed(time.Now().UnixNano())
-}
 
 func QuickSort(s Sortable) {
 	quicksort(s, 0, s.Len() - 1)
@@ -16,7 +11,7 @@ func QuickSort(s Sortable) {
 type Quick struct {}
 
 func (Quick) Integers(s []int) {
-	QuickSort(IntSlice(s))
+	QuickSort(IntegerSlice(s))
 }
 
 func (Quick) Floats(s []float64) {
